@@ -1,0 +1,17 @@
+{
+  "name": "prompt-router",
+  "version": "0.1.0",
+  "description": "Cloudflare Worker that classifies LLM prompts and routes them to different models via AI Gateway Dynamic Routes.",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20250101.0",
+    "typescript": "^5.5.0",
+    "wrangler": "^3.90.0"
+  }
+}

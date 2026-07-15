@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "prompt-router",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-01",
+
+  // Workers AI binding — used by the classifier.
+  "ai": {
+    "binding": "AI"
+  },
+
+  // Non-secret configuration. Override per-environment in your fork if needed.
+  // GATEWAY_ACCOUNT_ID and GATEWAY_NAME are visible in AI Gateway URLs anyway,
+  // so they're not treated as secrets. AI_GATEWAY_TOKEN *is* a secret — set it
+  // with:  wrangler secret put AI_GATEWAY_TOKEN
+  "vars": {
+    "GATEWAY_ACCOUNT_ID": "REPLACE_WITH_YOUR_ACCOUNT_ID",
+    "GATEWAY_NAME": "REPLACE_WITH_YOUR_GATEWAY_NAME"
+  },
+
+  // Uncomment and set your own domain for production use. Custom domains avoid
+  // the workers.dev rate limits and work more reliably with OpenAI-compatible
+  // clients like Open WebUI and LibreChat.
+  //
+  // "routes": [
+  //   {
+  //     "pattern": "ai.example.com",
+  //     "custom_domain": true
+  //   }
+  // ],
+
+  "observability": {
+    "enabled": true
+  }
+}
