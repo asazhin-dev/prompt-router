@@ -61,6 +61,8 @@ interface Classifier {
 interface ClassifyResult {
   task: Task;
   raw: string;
+  confidence?: number;
+  fallback: boolean;
   classifier: string;
   model: string;
   ms: number;
@@ -75,6 +77,9 @@ const CLEF_CRITERIA = {
   coding: "Writing, debugging, reviewing or explaining code, scripts, SQL, regex, configs or developer tooling",
   simple: "General knowledge, writing, translation, advice and everything else",
 };
+
+const CONFIDENCE_THRESHOLD = 0.7;
+
 /**
  * Registry of available classifiers. To add a new one (e.g. a different
  * model), add an entry here — then select it per request with the
@@ -178,7 +183,14 @@ export default {
     }
 
     const prompt = extractLatestUserText(body.messages);
-    const result = await classifyPrompt(env, classifierName, prompt);
+    let result: ClassifyResult;
+    try {
+      result = await classifyPrompt(env, classifierName, prompt);
+    } catch (error) {
+      console.error(JSON.stringify({ event: "classify_error", classifier: classifierName, error: String(error) }));
+      return Response.json({ error: "classification failed", detail: String(error) }, { status: 502 });
+    }
+
 
     // Benchmark endpoint: classification only, no upstream call.
     if (new URL(request.url).pathname === "/classify") {
@@ -242,9 +254,8 @@ async function classifyPrompt(env: Env, name: string, prompt: string): Promise<C
   const { raw, confidence } = await classifier.run(env, prompt);
   const ms = Math.round(performance.now() - start);
 
-  const lowConfidence = confidence !== undefined && confidence < 0.7;
-  const task: Task =
-      lowConfidence || raw.trim().toLowerCase() === "coding" ? "coding" : "simple";
+  const lowConfidence = confidence !== undefined && confidence < CONFIDENCE_THRESHOLD;
+  const task: Task = !lowConfidence && raw.trim().toLowerCase() === "simple" ? "simple" : "coding";
 
   console.log(
     JSON.stringify({
@@ -259,5 +270,5 @@ async function classifyPrompt(env: Env, name: string, prompt: string): Promise<C
     }),
   );
 
-  return { task, raw, classifier: name, model: classifier.model, ms };
+  return { task, raw, confidence, fallback: lowConfidence, classifier: name, model: classifier.model, ms };
 }

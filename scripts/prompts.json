@@ -1,0 +1,22 @@
+[
+  { "label": "simple", "prompt": "What is the capital of Portugal?" },
+  { "label": "simple", "prompt": "Give me three ideas for a rainy Sunday with a baby." },
+  { "label": "simple", "prompt": "Translate 'Good morning, how are you?' into German." },
+  { "label": "simple", "prompt": "Summarize the plot of Hamlet in two sentences." },
+  { "label": "simple", "prompt": "How many grams are in a pound?" },
+  { "label": "simple", "prompt": "Write a short, friendly birthday message for a colleague." },
+  { "label": "simple", "prompt": "What's the difference between weather and climate?" },
+  { "label": "simple", "prompt": "Suggest a name for a small Italian restaurant in Munich." },
+  { "label": "simple", "prompt": "Explain in simple terms why the sky is blue." },
+  { "label": "simple", "prompt": "I have a job interview tomorrow for a solutions architect role. What general questions should I prepare for, and how should I structure my answers about past projects? Keep it high level, no technical deep dives." },
+  { "label": "coding", "prompt": "Write a Python function that reverses a linked list in place." },
+  { "label": "coding", "prompt": "Why does this throw 'undefined is not a function'? const x = [1,2,3]; x.mapp(n => n * 2);" },
+  { "label": "coding", "prompt": "Write a SQL query that returns the top 5 customers by total order value in 2025." },
+  { "label": "coding", "prompt": "How do I return a 404 from a Cloudflare Worker in TypeScript?" },
+  { "label": "coding", "prompt": "Convert this bash loop to PowerShell: for f in *.log; do gzip \"$f\"; done" },
+  { "label": "coding", "prompt": "Explain the difference between useEffect and useLayoutEffect in React, with a code example." },
+  { "label": "coding", "prompt": "Write a Dockerfile for a Node 20 Express app that runs as a non-root user." },
+  { "label": "coding", "prompt": "My Go HTTP server leaks goroutines under load. Here is the handler:\n\nfunc handler(w http.ResponseWriter, r *http.Request) {\n  ch := make(chan string)\n  go func() { ch <- slowCall() }()\n  select {\n  case res := <-ch:\n    fmt.Fprint(w, res)\n  case <-time.After(2 * time.Second):\n    http.Error(w, \"timeout\", 504)\n  }\n}\n\nWhat's wrong and how do I fix it?" },
+  { "label": "coding", "prompt": "Write a regex that matches German postal codes." },
+  { "label": "coding", "prompt": "Refactor this to async/await: fetch(url).then(r => r.json()).then(d => console.log(d)).catch(e => console.error(e));" }
+]
