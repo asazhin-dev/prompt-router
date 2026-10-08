@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "prompt-router",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-01-01",
+
+  // Workers AI binding — used by the classifier.
+  "ai": {
+    "binding": "AI"
+  },
+
+  // Non-secret configuration — replace the placeholders with your values.
+  // AI_GATEWAY_TOKEN *is* a secret — set it with:  wrangler secret put AI_GATEWAY_TOKEN
+  "vars": {
+    "GATEWAY_ACCOUNT_ID": "<your-cloudflare-account-id>",
+    "GATEWAY_NAME": "<your-gateway-name>"
+  },
+
+  // Optional: serve the Worker on your own domain instead of workers.dev.
+  // "routes": [
+  //   {
+  //     "pattern": "ai.example.com",
+  //     "custom_domain": true
+  //   }
+  // ],
+
+  "observability": {
+    "enabled": true
+  }
+}
