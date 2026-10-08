@@ -7,11 +7,12 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "bench": "node scripts/bench.mjs"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250101.0",
+    "@cloudflare/workers-types": "^5.20261008.1",
     "typescript": "^5.5.0",
-    "wrangler": "^3.90.0"
+    "wrangler": "^4.148.0"
   }
 }

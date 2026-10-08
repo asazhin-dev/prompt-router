@@ -14,8 +14,8 @@
   // so they're not treated as secrets. AI_GATEWAY_TOKEN *is* a secret — set it
   // with:  wrangler secret put AI_GATEWAY_TOKEN
   "vars": {
-    "GATEWAY_ACCOUNT_ID": "REPLACE_WITH_YOUR_ACCOUNT_ID",
-    "GATEWAY_NAME": "REPLACE_WITH_YOUR_GATEWAY_NAME"
+    "GATEWAY_ACCOUNT_ID": "3314027c51130f03d09f8c511d73b5cc",
+    "GATEWAY_NAME": "aigw"
   },
 
   // Uncomment and set your own domain for production use. Custom domains avoid

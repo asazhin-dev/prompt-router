@@ -6,6 +6,13 @@
  * AI Gateway's Dynamic Routes then dispatch to the appropriate upstream model
  * (e.g. Claude Sonnet for coding, a cheap Workers AI model for everything else).
  *
+ * Latency instrumentation:
+ *   - Every routed response carries a `Server-Timing` header
+ *     (`classify;dur=…, upstream;dur=…`) plus `x-router-task` / `x-router-classifier`.
+ *   - Every classification is logged as structured JSON (Workers Logs).
+ *   - `POST /classify` runs only the classifier and returns JSON — no upstream
+ *     call — so it can be benchmarked cheaply (see scripts/bench.mjs).
+ *
  * See README.md for setup instructions.
  */
 
@@ -14,6 +21,8 @@ export interface Env {
   GATEWAY_ACCOUNT_ID: string;
   GATEWAY_NAME: string;
   AI_GATEWAY_TOKEN: string;
+  /** Optional: which classifier to use by default (key of CLASSIFIERS). */
+  CLASSIFIER?: string;
 }
 
 interface ChatMessage {
@@ -27,13 +36,127 @@ interface ChatCompletionsRequest {
   [key: string]: unknown;
 }
 
+type Task = "coding" | "simple";
+type ClefResult = {
+  answers?: {
+    classify?: {
+      choice: string;
+      confidence: number;
+    };
+  };
+};
+
+interface ClassifierOutput {
+  raw: string;
+  confidence?: number;
+}
+
+interface Classifier {
+  /** Model identifier, reported in logs and benchmark output. */
+  model: string;
+  /** Returns the raw model output; parsing to a Task happens in one place. */
+  run(env: Env, prompt: string): Promise<ClassifierOutput>;
+}
+
+interface ClassifyResult {
+  task: Task;
+  raw: string;
+  classifier: string;
+  model: string;
+  ms: number;
+}
+
+const SYSTEM_PROMPT =
+  "Classify the user prompt into exactly one word: 'coding' or 'simple'. " +
+  "Reply with only that single word, nothing else.";
+
+const CLEF_PROMPT = "Which model tier should handle this user request?";
+const CLEF_CRITERIA = {
+  coding: "Writing, debugging, reviewing or explaining code, scripts, SQL, regex, configs or developer tooling",
+  simple: "General knowledge, writing, translation, advice and everything else",
+};
+/**
+ * Registry of available classifiers. To add a new one (e.g. a different
+ * model), add an entry here — then select it per request with the
+ * `x-classifier` header or globally with the CLASSIFIER var.
+ */
+const CLASSIFIERS: Record<string, Classifier> = {
+  "llama-4-scout": {
+    model: "@cf/meta/llama-4-scout-17b-16e-instruct",
+    async run(env, prompt) {
+      const out = (await env.AI.run(this.model as never, {
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: prompt },
+        ],
+      })) as { response?: string };
+      return { raw: out.response ?? "" };
+    },
+  },
+  "clef": {
+    model: "@cf/cloudflare/clef",
+    async run(env, prompt) {
+      const out = (await env.AI.run(this.model, {
+        model: "clef",
+        state: prompt,
+        questions: {
+          classify: {
+            type: "choice",
+            instructions: CLEF_PROMPT,
+            criteria: CLEF_CRITERIA
+          }
+        }
+      })) as ClefResult;
+
+      return {
+        raw: out.answers?.classify?.choice ?? "",
+        confidence: out.answers?.classify?.confidence,
+      };
+      },
+    },
+    "clef-flash": {
+      model: "@cf/cloudflare/clef-flash",
+      async run(env, prompt) {
+        const out = (await env.AI.run(this.model, {
+          model: "clef-flash",
+          state: prompt,
+          questions: {
+            classify: {
+              type: "choice",
+              instructions: CLEF_PROMPT,
+              criteria: CLEF_CRITERIA
+            }
+          }
+        })) as ClefResult;
+
+        return {
+          raw: out.answers?.classify?.choice ?? "",
+          confidence: out.answers?.classify?.confidence,
+        };
+      },
+    },
+  // "my-new-classifier": {
+  //   model: "...",
+  //   async run(env, prompt) { ... return rawText; },
+  // },
+};
+
+const DEFAULT_CLASSIFIER = "clef-flash";
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const gatewayUrl =
       `https://gateway.ai.cloudflare.com/v1/${env.GATEWAY_ACCOUNT_ID}` +
       `/${env.GATEWAY_NAME}/compat/chat/completions`;
 
-    // Anything that isn't a POST with a chat body gets a health-check response.
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", {
+        status: 405,
+        headers: { Allow: "POST" },
+      });
+    }
+
+    // A POST without a parseable chat body gets a health-check response.
     let body: ChatCompletionsRequest = {};
     try {
       body = await request.json();
@@ -45,22 +168,49 @@ export default {
       return new Response("prompt-router is running");
     }
 
-    const prompt = extractLatestUserText(body.messages);
+    const classifierName =
+      request.headers.get("x-classifier") ?? env.CLASSIFIER ?? DEFAULT_CLASSIFIER;
+    if (!CLASSIFIERS[classifierName]) {
+      return Response.json(
+        { error: `unknown classifier '${classifierName}'`, available: Object.keys(CLASSIFIERS) },
+        { status: 400 },
+      );
+    }
 
-    const task = await classifyPrompt(env.AI, prompt);
+    const prompt = extractLatestUserText(body.messages);
+    const result = await classifyPrompt(env, classifierName, prompt);
+
+    // Benchmark endpoint: classification only, no upstream call.
+    if (new URL(request.url).pathname === "/classify") {
+      return Response.json(result, {
+        headers: { "Server-Timing": `classify;dur=${result.ms}` },
+      });
+    }
 
     // Forward to AI Gateway with explicit auth + routing metadata.
     // We intentionally do NOT spread `request.headers` — that would leak the
     // caller's Authorization header onward and confuse AI Gateway's auth layer.
-    return fetch(gatewayUrl, {
+    const upstreamStart = performance.now();
+    const upstream = await fetch(gatewayUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "cf-aig-authorization": `Bearer ${env.AI_GATEWAY_TOKEN}`,
-        "cf-aig-metadata": JSON.stringify({ task }),
+        "cf-aig-metadata": JSON.stringify({ task: result.task }),
       },
       body: JSON.stringify(body),
     });
+    // Time to upstream response headers (TTFB); streaming bodies continue after this.
+    const upstreamMs = Math.round(performance.now() - upstreamStart);
+
+    const response = new Response(upstream.body, upstream);
+    response.headers.append(
+      "Server-Timing",
+      `classify;dur=${result.ms}, upstream;dur=${upstreamMs};desc="ttfb"`,
+    );
+    response.headers.set("x-router-task", result.task);
+    response.headers.set("x-router-classifier", result.classifier);
+    return response;
   },
 } satisfies ExportedHandler<Env>;
 
@@ -80,26 +230,34 @@ function extractLatestUserText(messages: ChatMessage[]): string {
 }
 
 /**
- * Classify a prompt as "coding" or "simple" using a small, cheap Workers AI
- * model. Extend this function to add more categories.
+ * Classify a prompt as "coding" or "simple" with the chosen classifier and
+ * measure how long it took.
+ *
+ * Note: in Workers, timers only advance across I/O, so this measures the
+ * model call itself (which is exactly the latency we care about).
  */
-async function classifyPrompt(ai: Ai, prompt: string): Promise<"coding" | "simple"> {
-  const classification = await ai.run(
-    "@cf/meta/llama-4-scout-17b-16e-instruct" as never,
-    {
-      messages: [
-        {
-          role: "system",
-          content:
-            "Classify the user prompt into exactly one word: 'coding' or 'simple'. " +
-            "Reply with only that single word, nothing else.",
-        },
-        { role: "user", content: prompt },
-      ],
-    },
-  ) as { response?: string };
+async function classifyPrompt(env: Env, name: string, prompt: string): Promise<ClassifyResult> {
+  const classifier = CLASSIFIERS[name];
+  const start = performance.now();
+  const { raw, confidence } = await classifier.run(env, prompt);
+  const ms = Math.round(performance.now() - start);
 
-  return classification.response?.trim().toLowerCase() === "coding"
-    ? "coding"
-    : "simple";
+  const lowConfidence = confidence !== undefined && confidence < 0.7;
+  const task: Task =
+      lowConfidence || raw.trim().toLowerCase() === "coding" ? "coding" : "simple";
+
+  console.log(
+    JSON.stringify({
+      event: "classify",
+      classifier: name,
+      model: classifier.model,
+      task,
+      raw: raw.slice(0, 50),
+      ms,
+      confidence: confidence,
+      promptChars: prompt.length,
+    }),
+  );
+
+  return { task, raw, classifier: name, model: classifier.model, ms };
 }

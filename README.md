@@ -125,6 +125,36 @@ served by Kimi-K2 and the second by Claude Sonnet.
 Check **Workers → prompt-router → Logs** for the classifier's decision on each
 request.
 
+## Measuring classification latency
+
+Every routed response carries timing headers:
+
+```
+Server-Timing: classify;dur=412, upstream;dur=980;desc="ttfb"
+x-router-task: coding
+x-router-classifier: llama-4-scout
+```
+
+Each classification is also logged as JSON (`event: "classify"`, `ms`, `task`,
+`raw`, `promptChars`). Query it in **Workers → prompt-router → Logs**.
+
+To benchmark only the classifier (no upstream model call, no Anthropic cost),
+use the `/classify` endpoint via the bench script:
+
+```bash
+npm run bench -- --url https://prompt-router.<your-subdomain>.workers.dev
+# options: --runs 3 --concurrency 1 --warmup 2 --classifier a,b --prompts file.json
+```
+
+It sends every labeled prompt in `scripts/prompts.json` and prints p50/p90/p95/p99
+for server-side classify time and client round-trip time, plus accuracy against
+the labels. Raw results go to `bench-results/` (gitignored).
+
+To compare classifiers, add an entry to `CLASSIFIERS` in `src/index.ts`, deploy,
+and pass both names: `--classifier llama-4-scout,my-new-classifier`. Select one
+per request with the `x-classifier` header, or set the `CLASSIFIER` var
+globally.
+
 ## Point your existing app at it
 
 Anything that speaks the OpenAI Chat Completions API works:
